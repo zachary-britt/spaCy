@@ -174,7 +174,7 @@ class PrecomputableAffine(Model):
                 sgd(self._mem.weights, self._mem.gradient, key=self.id)
             return dXf.reshape((dXf.shape[0], self.nF, self.nI))
         return Yf, backward
-    
+
     def _add_padding(self, Yf):
         Yf_padded = self.ops.xp.vstack((self.pad, Yf))
         return Yf_padded
@@ -467,6 +467,10 @@ def SpacyVectors(docs, drop=0.):
 
 
 def build_text_classifier(nr_class, width=64, **cfg):
+    with open('zlog.txt', 'w') as zfile:
+        zfile.write("I'm 'in' the computer!")
+    print("I'm also in your terminal")
+
     nr_vector = cfg.get('nr_vector', 5000)
     pretrained_dims = cfg.get('pretrained_dims', 0)
     with Model.define_operators({'>>': chain, '+': add, '|': concatenate,
@@ -484,21 +488,21 @@ def build_text_classifier(nr_class, width=64, **cfg):
             )
             return model
 
-        lower = HashEmbed(width, nr_vector, column=1)
-        prefix = HashEmbed(width//2, nr_vector, column=2)
-        suffix = HashEmbed(width//2, nr_vector, column=3)
-        shape = HashEmbed(width//2, nr_vector, column=4)
-
-        trained_vectors = (
-            FeatureExtracter([ORTH, LOWER, PREFIX, SUFFIX, SHAPE, ID])
-            >> with_flatten(
-                uniqued(
-                    (lower | prefix | suffix | shape)
-                    >> LN(Maxout(width, width+(width//2)*3)),
-                    column=0
-                )
-            )
-        )
+        # lower = HashEmbed(width, nr_vector, column=1)
+        # prefix = HashEmbed(width//2, nr_vector, column=2)
+        # suffix = HashEmbed(width//2, nr_vector, column=3)
+        # shape = HashEmbed(width//2, nr_vector, column=4)
+        #
+        # trained_vectors = (
+        #     FeatureExtracter([ORTH, LOWER, PREFIX, SUFFIX, SHAPE, ID])
+        #     >> with_flatten(
+        #         uniqued(
+        #             (lower | prefix | suffix | shape)
+        #             >> LN(Maxout(width, width+(width//2)*3)),
+        #             column=0
+        #         )
+        #     )
+        # )
 
         if pretrained_dims:
             static_vectors = (
@@ -506,12 +510,15 @@ def build_text_classifier(nr_class, width=64, **cfg):
                 >> with_flatten(Affine(width, pretrained_dims))
             )
             # TODO Make concatenate support lists
-            vectors = concatenate_lists(trained_vectors, static_vectors)
-            vectors_width = width*2
-        else:
-            vectors = trained_vectors
+            # vectors = concatenate_lists(trained_vectors, static_vectors)
+            # vectors_width = width*2
+            vectors = static_vectors
             vectors_width = width
-            static_vectors = None
+        else:
+            # vectors = trained_vectors
+            # vectors_width = width
+            # static_vectors = None
+            print('No vectors')
         cnn_model = (
             vectors
             >> with_flatten(
