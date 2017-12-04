@@ -404,6 +404,25 @@ def logistic(X, drop=0.):
     return Y, logistic_bwd
 
 
+@layerize
+def tanh(X, drop=0.):
+    xp = get_array_module(X)
+    if not isinstance(X, xp.ndarray):
+        X = xp.asarray(X)
+    # Clip to range (-10, 10)
+    X = xp.minimum(X, 10., X)
+    X = xp.maximum(X, -10., X)
+    # Y = 1. / (1. + xp.exp(-X))
+    Y = (xp.exp(2*X) - 1.) / (xp.exp(2*X) + 1.)
+
+    def tanh_bwd(dY, sgd=None):
+        dX = dY * (1 - Y * Y)
+        # dX = dY * (Y * (1-Y))
+        return dX
+
+    return Y, tanh_bwd
+
+
 def zero_init(model):
     def _zero_init_impl(self, X, y):
         self.W.fill(0)
@@ -467,9 +486,7 @@ def SpacyVectors(docs, drop=0.):
 
 
 def build_text_classifier(nr_class, width=64, **cfg):
-    with open('zlog.txt', 'w') as zfile:
-        zfile.write("I'm 'in' the computer!")
-    print("I'm also in your terminal")
+    print("Custom build_text_classifier called")
 
     nr_vector = cfg.get('nr_vector', 5000)
     pretrained_dims = cfg.get('pretrained_dims', 0)
@@ -514,6 +531,7 @@ def build_text_classifier(nr_class, width=64, **cfg):
             # vectors_width = width*2
             vectors = static_vectors
             vectors_width = width
+            print('Special vectors')
         else:
             # vectors = trained_vectors
             # vectors_width = width
@@ -543,7 +561,8 @@ def build_text_classifier(nr_class, width=64, **cfg):
         model = (
             (linear_model | cnn_model)
             >> zero_init(Affine(nr_class, nr_class*2, drop_factor=0.0))
-            >> logistic
+            #>> logistic
+            >> tanh
         )
     model.nO = nr_class
     model.lsuv = False
