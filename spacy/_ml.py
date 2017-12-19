@@ -405,6 +405,24 @@ def logistic(X, drop=0.):
 
 
 @layerize
+def _tanh(X, drop=0.):
+    xp = get_array_module(X)
+    if not isinstance(X, xp.ndarray):
+        X = xp.asarray(X)
+    # Clip to range (-10, 10)
+    X = xp.minimum(X, 10., X)
+    X = xp.maximum(X, -10., X)
+    e = xp.exp(2*X)
+    Y = (e - 1.) / (e + 1.)
+
+    def tanh_bwd(dY, sgd=None):
+        dX = dY * (1 - Y * Y)
+        return dX
+
+    return Y, tanh_bwd
+
+
+@layerize
 def tanh(X, drop=0.):
     xp = get_array_module(X)
     if not isinstance(X, xp.ndarray):
@@ -412,12 +430,11 @@ def tanh(X, drop=0.):
     # Clip to range (-10, 10)
     X = xp.minimum(X, 10., X)
     X = xp.maximum(X, -10., X)
-    # Y = 1. / (1. + xp.exp(-X))
-    Y = (xp.exp(2*X) - 1.) / (xp.exp(2*X) + 1.)
+    e = xp.exp(2*X)
+    Y = (e - 1.) / (e + 1.)
 
     def tanh_bwd(dY, sgd=None):
         dX = dY * (1 - Y * Y)
-        # dX = dY * (Y * (1-Y))
         return dX
 
     return Y, tanh_bwd
@@ -501,25 +518,29 @@ def build_text_classifier(nr_class, width=64, **cfg):
                 >> Pooling(sum_pool)
                 >> Residual(ReLu(width, width)) ** 2
                 >> zero_init(Affine(nr_class, width, drop_factor=0.0))
-                >> logistic
+
+                if cfg.get('tanh_out'):
+                    >> tanh
+                else:
+                    >> logistic
             )
             return model
 
-        # lower = HashEmbed(width, nr_vector, column=1)
-        # prefix = HashEmbed(width//2, nr_vector, column=2)
-        # suffix = HashEmbed(width//2, nr_vector, column=3)
-        # shape = HashEmbed(width//2, nr_vector, column=4)
-        #
-        # trained_vectors = (
-        #     FeatureExtracter([ORTH, LOWER, PREFIX, SUFFIX, SHAPE, ID])
-        #     >> with_flatten(
-        #         uniqued(
-        #             (lower | prefix | suffix | shape)
-        #             >> LN(Maxout(width, width+(width//2)*3)),
-        #             column=0
-        #         )
-        #     )
-        # )
+        lower = HashEmbed(width, nr_vector, column=1)
+        prefix = HashEmbed(width//2, nr_vector, column=2)
+        suffix = HashEmbed(width//2, nr_vector, column=3)
+        shape = HashEmbed(width//2, nr_vector, column=4)
+
+        trained_vectors = (
+            FeatureExtracter([ORTH, LOWER, PREFIX, SUFFIX, SHAPE, ID])
+            >> with_flatten(
+                uniqued(
+                    (lower | prefix | suffix | shape)
+                    >> LN(Maxout(width, width+(width//2)*3)),
+                    column=0
+                )
+            )
+        )
 
         if pretrained_dims:
             static_vectors = (
@@ -527,16 +548,12 @@ def build_text_classifier(nr_class, width=64, **cfg):
                 >> with_flatten(Affine(width, pretrained_dims))
             )
             # TODO Make concatenate support lists
-            # vectors = concatenate_lists(trained_vectors, static_vectors)
-            # vectors_width = width*2
-            vectors = static_vectors
-            vectors_width = width
-            print('Special vectors')
+            vectors = concatenate_lists(trained_vectors, static_vectors)
+            vectors_width = width*2
         else:
-            # vectors = trained_vectors
-            # vectors_width = width
-            # static_vectors = None
-            print('No vectors')
+            vectors = trained_vectors
+            vectors_width = width
+            static_vectors = None
         cnn_model = (
             vectors
             >> with_flatten(
@@ -556,14 +573,16 @@ def build_text_classifier(nr_class, width=64, **cfg):
             _preprocess_doc
             >> LinearModel(nr_class)
         )
-        #model = linear_model >> logistic
 
         model = (
             (linear_model | cnn_model)
             >> zero_init(Affine(nr_class, nr_class*2, drop_factor=0.0))
-            #>> logistic
-            >> tanh
+            if cfg.get('tanh_out'):
+                >> tanh
+            else:
+                >> logistic
         )
+        print('BUILDING MODEL')
     model.nO = nr_class
     model.lsuv = False
     return model
